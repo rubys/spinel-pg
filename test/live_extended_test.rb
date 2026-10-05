@@ -26,6 +26,15 @@ def xq_connect_retry(port, db, user, password)
   end
 end
 
+def xq_no_type(result)
+  begin
+    result.ftype(0)
+  rescue ArgumentError => e
+    return e.message == "invalid field number 0"
+  end
+  false
+end
+
 DIR = "/tmp/spinel-pg-live-extended"
 # Stop the server; remove the directory only once pg_ctl reports no
 # server (3) or no cluster (4) there, and say so if both held.
@@ -64,6 +73,36 @@ begin
     bounds = bounds && raised
   end
   puts "type_bounds  " + bounds.to_s
+
+  # The final command owns the result, even without a RowDescription (#8).
+  r = c.exec("BEGIN; SELECT false; COMMIT")
+  puts "batch_commit " + r.cmd_tag + " fields=" + r.nfields.to_s + " rows=" + r.ntuples.to_s
+  puts "commit_empty " + (xq_no_type(r) && r.getvalue(0, 0).nil?).to_s
+  c.exec("CREATE TEMP TABLE widgets (flag boolean)")
+  r = c.exec("SELECT false; UPDATE widgets SET flag = true WHERE false")
+  puts "batch_update " + r.cmd_tag + " fields=" + r.nfields.to_s + " rows=" + r.ntuples.to_s
+  puts "update_empty " + (xq_no_type(r) && r.getvalue(0, 0).nil?).to_s
+  r = c.exec("SELECT false; SELECT 7::bigint AS last WHERE false")
+  puts "batch_zero   " + (r.cmd_tag == "SELECT 0" && r.ntuples == 0 && r.nfields == 1 && r.fields[0] == "last" && r.ftype(0) == 20).to_s
+  r = c.exec("")
+  puts "simple_empty " + (r.cmd_tag == "" && r.nfields == 0 && r.ntuples == 0 && xq_no_type(r)).to_s
+  raised = false
+  begin
+    c.exec("SELECT false; SELECT 1 / 0")
+  rescue => e
+    raised = e.message.include?("division by zero")
+  end
+  puts "batch_error  " + (raised && c.transaction_status == PG::PQTRANS_IDLE).to_s
+  r = c.exec("SELECT false")
+  puts "batch_resume " + (r.getvalue(0, 0) == "f" && r.ftype(0) == 16).to_s
+
+  # A self-notification is delivered between the final CommandComplete and
+  # ReadyForQuery. Notifications remain unexposed, but must not erase data.
+  c.exec("LISTEN result_boundary")
+  r = c.exec("NOTIFY result_boundary, 'hello'; SELECT false AS flag")
+  puts "notify_result " + (r.cmd_tag == "SELECT 1" && r.nfields == 1 && r.ntuples == 1 &&
+                            r.fields[0] == "flag" && r.getvalue(0, 0) == "f" && r.ftype(0) == 16).to_s
+  c.exec("UNLISTEN result_boundary")
 
   # --- parameters travel apart from the SQL ---------------------------------------
 
