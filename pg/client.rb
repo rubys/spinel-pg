@@ -8,6 +8,7 @@
 # are ledgered in the README.
 require "pg/wire"
 require "pg/scram"
+require "pg/errors"
 
 # transaction_status values, as the pg gem names them (ACTIVE never
 # shows: a call returns only once ReadyForQuery has arrived).
@@ -118,9 +119,7 @@ class PgClientCore
   end
 
   def raise_error(body)
-    sev = PgDecode.error_field(body, "S")
-    msg = PgDecode.error_field(body, "M")
-    raise "pg: " + sev + ": " + msg
+    PG.raise_server_error(body)
   end
 
   # FATAL and PANIC end the session: the server closes the connection
