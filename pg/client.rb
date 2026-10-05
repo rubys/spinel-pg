@@ -259,13 +259,31 @@ class PgClientCore
     tag = ""
     err_body = ""
     failed = false
+    complete = false
     while true
       m = read_msg
+      # Keep the completed result through asynchronous messages and ReadyForQuery,
+      # but start fresh when the next command's reply arrives.
+      if complete && m.kind != "Z" && m.kind != "N" && m.kind != "S" && m.kind != "A"
+        # Fresh typed arrays avoid shifting every accumulated cell on reset.
+        fields = [""]
+        fields.delete_at(0)
+        types = [0]
+        types.delete_at(0)
+        values = [""]
+        values.delete_at(0)
+        nulls = [0]
+        nulls.delete_at(0)
+        tag = ""
+        complete = false
+      end
       if m.kind == "T"
         fields = PgDecode.field_names(m.body)
         types = PgDecode.field_types(m.body)
-        values.delete_at(0) while values.length > 0
-        nulls.delete_at(0) while nulls.length > 0
+        values = [""]
+        values.delete_at(0)
+        nulls = [0]
+        nulls.delete_at(0)
       elsif m.kind == "D"
         row = PgDecode.row_values(m.body, "")
         # Parallel null flags: row_values hands back "" for NULL with a
@@ -279,6 +297,9 @@ class PgClientCore
         end
       elsif m.kind == "C"
         tag = PgDecode.command_tag(m.body)
+        complete = true
+      elsif m.kind == "I"
+        complete = true
       elsif m.kind == "E"
         err_body = m.body
         failed = true
@@ -293,9 +314,9 @@ class PgClientCore
         end
         return PgResult.new(fields, values, nulls, tag, types)
       end
-      # "N" notices / "S" parameter changes: ignored. So are the replies
-      # with no result data: "1" ParseComplete, "2" BindComplete, "3"
-      # CloseComplete, "n" NoData, "I" EmptyQueryResponse.
+      # "N" notices / "S" parameter changes / "A" notifications: ignored.
+      # So are replies with no result data: "1" ParseComplete, "2" BindComplete, "3"
+      # CloseComplete, "n" NoData.
     end
   end
 end

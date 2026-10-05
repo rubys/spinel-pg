@@ -3,6 +3,15 @@ simple_types 20,16,25,1043
 null_type    true
 empty_types  true
 type_bounds  true
+batch_commit COMMIT fields=0 rows=0
+commit_empty true
+batch_update UPDATE 0 fields=0 rows=0
+update_empty true
+batch_zero   true
+simple_empty true
+batch_error  true
+batch_resume true
+notify_result true
 fields       a,b,c,d
 bound_types  25,25,25,25
 param_text   hello
