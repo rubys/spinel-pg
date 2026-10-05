@@ -1,5 +1,10 @@
 connected    true
+simple_types 20,16,25,1043
+null_type    true
+empty_types  true
+type_bounds  true
 fields       a,b,c,d
+bound_types  25,25,25,25
 param_text   hello
 param_null   true
 param_empty  true
@@ -9,6 +14,7 @@ param_large  100000 true
 param_utf8   11 true
 prepare      true
 prep_run1    INSERT 0 1 id=1
+prep_type    23
 prep_run2    INSERT 0 1 id=2
 prep_server  1
 insert_tag   INSERT 0 1 fields=0
@@ -32,6 +38,8 @@ type_array   {x,"y z",NULL}
 type_bool    t
 type_numeric 2.50
 no_rows      v 0 SELECT 0
+no_rows_type 25
+prep_empty   true
 empty_query  true
 many_rows    20000 row 20000 SELECT 20000
 done

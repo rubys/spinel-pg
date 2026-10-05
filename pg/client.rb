@@ -23,11 +23,12 @@ end
 # StrArray with a parallel null-flag IntArray — and nil appears only at
 # the getvalue edge (the redis-rb-proven String|nil contract).
 class PgResult
-  def initialize(fields, values, nulls, tag)
+  def initialize(fields, values, nulls, tag, types)
     @fields = fields
     @values = values
     @nulls = nulls
     @tag = tag
+    @types = types
   end
 
   def fields
@@ -36,6 +37,15 @@ class PgResult
 
   def nfields
     @fields.length
+  end
+
+  # PostgreSQL type OID for a zero-based column, as in the pg gem.
+  # RowDescription carries it even when the result contains no rows.
+  def ftype(col)
+    if col < 0 || col >= @fields.length
+      raise ArgumentError, "invalid field number " + col.to_s
+    end
+    @types[col]
   end
 
   def ntuples
@@ -240,6 +250,8 @@ class PgClientCore
   def read_result
     fields = [""]
     fields.delete_at(0)
+    types = [0]
+    types.delete_at(0)
     values = [""]
     values.delete_at(0)
     nulls = [0]
@@ -251,6 +263,7 @@ class PgClientCore
       m = read_msg
       if m.kind == "T"
         fields = PgDecode.field_names(m.body)
+        types = PgDecode.field_types(m.body)
         values.delete_at(0) while values.length > 0
         nulls.delete_at(0) while nulls.length > 0
       elsif m.kind == "D"
@@ -278,7 +291,7 @@ class PgClientCore
         if failed
           raise_error(err_body)
         end
-        return PgResult.new(fields, values, nulls, tag)
+        return PgResult.new(fields, values, nulls, tag, types)
       end
       # "N" notices / "S" parameter changes: ignored. So are the replies
       # with no result data: "1" ParseComplete, "2" BindComplete, "3"

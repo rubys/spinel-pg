@@ -47,11 +47,30 @@ begin
   c = xq_connect_retry(16452, "postgres", "spinel_test", "")
   puts "connected    " + (c.ready? && c.transaction_status == PG::PQTRANS_IDLE).to_s
 
+  # Type metadata is independent of aliases, NULLs and the number of rows.
+  r = c.exec("SELECT 7::bigint AS n, false AS flag, NULL::text AS note, '7'::varchar AS label")
+  puts "simple_types " + [r.ftype(0), r.ftype(1), r.ftype(2), r.ftype(3)].join(",")
+  puts "null_type    " + (r.getvalue(0, 2).nil? && r.ftype(2) == 25).to_s
+  r = c.exec("SELECT 7::bigint AS n, false AS flag WHERE false")
+  puts "empty_types  " + (r.ntuples == 0 && r.ftype(0) == 20 && r.ftype(1) == 16).to_s
+  bounds = true
+  [-1, 2].each do |index|
+    raised = false
+    begin
+      r.ftype(index)
+    rescue ArgumentError => e
+      raised = e.message == "invalid field number " + index.to_s
+    end
+    bounds = bounds && raised
+  end
+  puts "type_bounds  " + bounds.to_s
+
   # --- parameters travel apart from the SQL ---------------------------------------
 
   r = c.exec_params("SELECT $1::text AS a, $2::text AS b, $3::text AS c, $4::text AS d",
                     ["hello", nil, "", "it's \"quoted\"; DROP TABLE x; --"])
   puts "fields       " + r.fields.join(",")
+  puts "bound_types  " + [r.ftype(0), r.ftype(1), r.ftype(2), r.ftype(3)].join(",")
   puts "param_text   " + r.getvalue(0, 0).to_s
   b = r.getvalue(0, 1)
   puts "param_null   " + b.nil?.to_s
@@ -81,6 +100,7 @@ begin
   puts "prepare      " + (r.ntuples == 0 && r.nfields == 0).to_s
   r = c.exec_prepared("ins", ["alice", "first"])
   puts "prep_run1    " + r.cmd_tag + " id=" + r.getvalue(0, 0).to_s
+  puts "prep_type    " + r.ftype(0).to_s
   r = c.exec_prepared("ins", ["bob", nil])
   puts "prep_run2    " + r.cmd_tag + " id=" + r.getvalue(0, 0).to_s
   r = c.exec("SELECT count(*) FROM pg_prepared_statements WHERE name = 'ins'")
@@ -175,6 +195,12 @@ begin
 
   r = c.exec_params("SELECT $1::text AS v WHERE false", ["x"])
   puts "no_rows      " + r.fields.join(",") + " " + r.ntuples.to_s + " " + r.cmd_tag
+  puts "no_rows_type " + r.ftype(0).to_s
+  c.prepare("empty_typed", "SELECT $1::boolean AS flag WHERE false")
+  first = c.exec_prepared("empty_typed", ["false"])
+  second = c.exec_prepared("empty_typed", ["true"])
+  c.close_prepared("empty_typed")
+  puts "prep_empty   " + (first.ntuples == 0 && second.ntuples == 0 && first.ftype(0) == 16 && second.ftype(0) == 16).to_s
   r = c.exec_params("", [])
   puts "empty_query  " + (r.nfields == 0 && r.ntuples == 0 && r.cmd_tag == "").to_s
   r = c.exec_params("SELECT g, 'row ' || g FROM generate_series(1, $1::int) AS g ORDER BY g", ["20000"])
